@@ -1,0 +1,13 @@
+{% extends 'layout.html' %}
+
+{% block title%}Home{% endblock %}
+
+{% block body %}
+    <h1>Pythia - prediction market</h1>
+
+    <ul>
+        {% for market in markets %}
+            <li><a href="{{ url_for('market', id=market.id) }}">{{ market.name }}</a>: {{ market.price }}</li>
+        {% endfor %}
+    </ul>
+{% endblock %}

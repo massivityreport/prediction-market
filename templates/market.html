@@ -1,0 +1,53 @@
+{% extends 'layout.html' %}
+
+{% block title%}Market{% endblock %}
+
+{% block body %}
+    <h1>Market: {{ market.name }}</h1>
+    <h2>User: {{ user.email }}</h2>
+
+    <p>Price: {{ market.price }}</p>
+
+    <form method=post action="{{ url_for('market', id=market.id) }}">
+        {% if buy_form.errors %}
+            <ul class=errors>
+            {% for error in buy_form.errors %}
+                <li>{{ error }}</li>
+            {% endfor %}
+            </ul>
+        {% endif %}
+        <div>
+            {{ buy_form.price.label }}
+            {{ buy_form.price }}
+        </div>
+        <div>
+            {{ buy_form.quantity.label }}
+            {{ buy_form.quantity }}
+        </div>        
+        <div>
+            {{ buy_form.csrf_token}}
+            <input type='submit' name='action' value='BUY'>
+            <input type='submit' name='action' value='SELL'>
+        </div>
+    </form>
+
+    <h2>Orders</h2>
+
+    <div style='float:left; width: 50%'>
+        <p>sell</p>
+        <ul>
+            {% for order in sell_orders %}
+                <li>type: {{ order.type }}, price: {{ order.price }}, quantity: {{ order.quantity }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    <div style='float:left; width: 50%'>
+        <p>buy</p>
+        <ul>
+            {% for order in buy_orders %}
+                <li>type: {{ order.type }}, price: {{ order.price }}, quantity: {{ order.quantity }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+
+{% endblock %}

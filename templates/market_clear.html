@@ -1,0 +1,36 @@
+{% extends 'layout.html' %}
+
+{% block title%}Market{% endblock %}
+
+{% block body %}
+    <h1>Market: {{ market.name }}</h1>
+
+    <p>Clearing price: {{ price }}</p>
+    <p>Clearing quantity: {{ quantity }}</p>
+    <p>Last buy price: {{ last_buy_price }}</p>
+    <p>Last sell price: {{ last_sell_price }}</p>
+
+    <h2>Orders</h2>
+
+    <div style='float:left; width: 50%'>
+        <p>sell</p>
+        <ul>
+            {% set sumq = 0 %}
+            {% for order in sell_orders %}
+                <li style="color:{{ 'red' if order.price > price else ('green' if order.quantity + sumq <= quantity else ('orange' if sumq <= quantity else 'red')) }}">type: {{ order.type }}, price: {{ order.price }}, quantity: {{ order.quantity }}</li>
+                {% set sumq = sumq + order.quantity %}
+            {% endfor %}
+        </ul>
+    </div>
+    <div style='float:left; width: 50%'>
+        <p>buy</p>
+        <ul>
+            {% set sumq = 0 %}
+            {% for order in buy_orders %}
+                <li style="color:{{ 'red' if order.price < price else ('green' if order.quantity + sumq <= quantity else ('orange' if sumq <= quantity else 'red')) }}">type: {{ order.type }}, price: {{ order.price }}, quantity: {{ order.quantity }}</li>
+                {% set sumq = sumq + order.quantity %}
+            {% endfor %}
+        </ul>
+    </div>
+
+{% endblock %}
