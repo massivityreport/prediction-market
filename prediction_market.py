@@ -1,129 +1,23 @@
 #! /usr/bin/env/python
 
-from flask import Flask, render_template, redirect, flash, url_for
-
-# data model
-import peewee
-from flask.ext import admin, login
-from flask.ext.admin import AdminIndexView
-from flask.ext.admin.contrib.peewee import ModelView
+# base flask
+from flask import Flask, render_template, redirect, flash, url_for, redirect
 
 # security
-from flask.ext.security import Security, PeeweeUserDatastore, \
-    UserMixin, RoleMixin, login_required, roles_required
+from flask.ext import login
+from flask.ext.security import Security, PeeweeUserDatastore, login_required, roles_required
 from flask.ext.login import current_user, current_app
 
 # forms
 from flask_wtf import Form
 from wtforms import BooleanField, TextField, IntegerField, FloatField, validators
 
+# pythia
+from data_model import db, User, Role, UserRoles, Market, Order
+from admin import build_admin
+import market_maker
+
 app = Flask(__name__)
-
-# data model
-db = peewee.SqliteDatabase('pythia.sqlite', check_same_thread=False)
-
-class BaseModel(peewee.Model):
-    class Meta:
-        database = db
-
-class User(BaseModel, UserMixin):
-    email = peewee.TextField()
-    password = peewee.TextField()
-    active = peewee.BooleanField(default=True)
-    confirmed_at = peewee.DateTimeField(null=True)
-
-    def __unicode__(self):
-        return self.email
-
-class Role(BaseModel, RoleMixin):
-    name = peewee.CharField(unique=True)
-    description = peewee.TextField(null=True)
-
-    def __unicode__(self):
-        return self.name
-
-class UserRoles(BaseModel):
-    user = peewee.ForeignKeyField(User, related_name='roles')
-    role = peewee.ForeignKeyField(Role, related_name='users')
-    name = property(lambda self: self.role.name)
-    description = property(lambda self: self.role.description)
-
-class Market(BaseModel):
-    name = peewee.TextField()
-    description = peewee.TextField()
-    status = peewee.TextField()
-    opening_date = peewee.DateTimeField()
-    closing_date = peewee.DateTimeField()
-    price = peewee.FloatField()
-    volume = peewee.FloatField()
-
-    def __unicode__(self):
-        return self.name
-
-class MarketHistory(BaseModel):
-    market = peewee.ForeignKeyField(Market, related_name='market', null=True)
-    date = peewee.DateTimeField()
-    price = peewee.FloatField()
-    volume = peewee.FloatField()
-
-class Stock(BaseModel):
-    market = peewee.ForeignKeyField(Market, related_name='stocks', null=True)
-    user = peewee.ForeignKeyField(User, related_name='stocks', null=True)
-    quantity = peewee.IntegerField()
-
-class Order(BaseModel):
-    market = peewee.ForeignKeyField(Market, related_name='orders', null=True)
-    user = peewee.ForeignKeyField(User, related_name='orders', null=True)
-    price = peewee.FloatField()
-    quantity = peewee.IntegerField()
-    type = peewee.TextField()
-    status = peewee.TextField()
-
-class Account(BaseModel):
-    user = peewee.ForeignKeyField(User, related_name='account', null=True)
-    market = peewee.ForeignKeyField(Market, related_name='account', null=True)
-    balance = peewee.FloatField()
-
-class Transaction(BaseModel):
-    account = peewee.ForeignKeyField(Account, related_name='transactions')
-    date = peewee.DateTimeField()
-    amount = peewee.FloatField()
-
-def create_tables():
-    for Model in (User, Role, UserRoles, Market, MarketHistory, Stock, Order, Account, Transaction):
-        Model.create_table(fail_silently=True)
-
-# admin
-class AuthMixin(object):
-    def is_accessible(self):
-        return current_user.is_authenticated() and current_user.has_role('admin')
-
-    def inaccessible_callback(self, name, **kwargs):
-        return current_app.login_manager.unauthorized()
-
-class MyAdminIndexView(AuthMixin, AdminIndexView):
-    pass
-
-class BaseAdmin(AuthMixin, ModelView):
-    pass
-
-class UserAdmin(BaseAdmin):
-    column_exclude_list = ['password']
-
-class RoleAdmin(BaseAdmin):
-    pass
-
-class UserRolesAdmin(BaseAdmin):
-    pass
-
-class MarketAdmin(BaseAdmin):
-    pass
-
-admin = admin.Admin(app, name='Pythia admin', index_view=MyAdminIndexView())
-admin.add_view(UserAdmin(User))
-admin.add_view(RoleAdmin(Role))
-admin.add_view(UserRolesAdmin(UserRoles))
-admin.add_view(MarketAdmin(Market))
 
 # security
 app.config['SECRET_KEY'] = 'super-secret'
@@ -132,6 +26,9 @@ app.config['SECURITY_PASSWORD_SALT'] = 'super-salt'
 
 user_datastore = PeeweeUserDatastore(db, User, Role, UserRoles)
 security = Security(app, user_datastore)
+
+# admin
+build_admin(app)
 
 # forms
 class OrderForm(Form):
@@ -166,8 +63,8 @@ def market(id):
         flash('Your order have been registered')
         return redirect(url_for('market', id=market.id))
 
-    sell_orders = Order.select().where(Order.market == market.id, Order.type == 'sell').order_by(Order.price.asc())
-    buy_orders = Order.select().where(Order.market == market.id , Order.type == 'buy').order_by(Order.price.desc())
+    sell_orders = market_maker.get_sell_orders(market)
+    buy_orders = market_maker.get_buy_orders(market)
 
     return render_template('market.html', 
         market=market, user=user, buy_form=buy_form, sell_form=sell_form, sell_orders=sell_orders, buy_orders=buy_orders)
@@ -176,36 +73,21 @@ def market(id):
 @login_required
 def market_clear(id):
     market = Market.get(Market.id == id)
-    sell_orders = Order.select().where(Order.market == market.id, Order.type == 'sell').order_by(Order.price.asc())
-    buy_orders = Order.select().where(Order.market == market.id , Order.type == 'buy').order_by(Order.price.desc())
+    sell_orders = market_maker.get_sell_orders(market)
+    buy_orders = market_maker.get_buy_orders(market)
 
-    unit_sell_orders = list()
-    for order in sell_orders:
-        for i in range(order.quantity):
-            unit_sell_orders.append(order.price)
-
-    unit_buy_orders = list()
-    for order in buy_orders:
-        for i in range(order.quantity):
-            unit_buy_orders.append(order.price)
-
-    price = None;
-    quantity = None;
-    k = 0
-    K = min(len(unit_sell_orders), len(unit_buy_orders))
-    while (k < K and unit_sell_orders[k] < unit_buy_orders[k]):
-        k+=1
-
-    if k > 0:
-        quantity = k
-        last_buy_price = unit_buy_orders[k-1]
-        last_sell_price = unit_sell_orders[k-1]
-        price = (last_buy_price + last_sell_price)/2
+    (price, quantity) = market_maker.get_market_clearing_price(market, sell_orders, buy_orders)
 
     return render_template('market_clear.html', 
-        market=market, sell_orders=sell_orders, buy_orders=buy_orders, price=price, quantity=quantity,
-        last_buy_price=last_buy_price, last_sell_price=last_sell_price)
+        market=market, sell_orders=sell_orders, buy_orders=buy_orders, price=price, quantity=quantity)
 
+@app.route('/market/<int:id>/clear_execute')
+@login_required
+def market_clear_execute(id):
+    market = Market.get(Market.id == id)
+    market_maker.clear_market(market)
+
+    return redirect(url_for('market', id=id))
 
 if __name__ == '__main__':
     app.debug = True

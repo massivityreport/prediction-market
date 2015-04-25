@@ -50,4 +50,12 @@
         </ul>
     </div>
 
+    <div style='clear: both'>
+        <form method=get action="{{ url_for('market_clear', id=market.id) }}">
+            <div>
+                <input type='submit' name='action' value='CLEAR'>
+            </div>
+        </form>
+    </div>
+
 {% endblock %}

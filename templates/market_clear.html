@@ -7,8 +7,6 @@
 
     <p>Clearing price: {{ price }}</p>
     <p>Clearing quantity: {{ quantity }}</p>
-    <p>Last buy price: {{ last_buy_price }}</p>
-    <p>Last sell price: {{ last_sell_price }}</p>
 
     <h2>Orders</h2>
 
@@ -31,6 +29,14 @@
                 {% set sumq = sumq + order.quantity %}
             {% endfor %}
         </ul>
+    </div>
+
+    <div style='clear: both'>
+        <form method=get action="{{ url_for('market_clear_execute', id=market.id) }}">
+            <div>
+                <input type='submit' name='action' value='EXECUTE'>
+            </div>
+        </form>
     </div>
 
 {% endblock %}
