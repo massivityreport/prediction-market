@@ -2,12 +2,36 @@
 
 import datetime
 
-from data_model import Market, Stock, Order
+from data_model import Market, Stock, Order, MarketHistory
 import bank
+
+def call(market, user, price, quantity):
+    order = Order.create(
+        market=market, 
+        user=user,
+        type='buy',
+        status='pending',
+        price=price,
+        quantity=quantity)
+    order.save()
+
+    return order
+
+def put(market, user, price, quantity):
+    order = Order.create(
+        market=market, 
+        user=user,
+        type='sell',
+        status='pending',
+        price=price,
+        quantity=quantity)
+    order.save()
+
+    return order
 
 def get_sell_orders(market):
     sell_orders = Order.select().where(
-        Order.market == market.id, 
+        Order.market == market, 
         Order.type == 'sell',
         Order.status == 'pending'
         ).order_by(Order.price.asc())
@@ -16,14 +40,19 @@ def get_sell_orders(market):
 
 def get_buy_orders(market):
     buy_orders = Order.select().where(
-        Order.market == market.id, 
+        Order.market == market, 
         Order.type == 'buy',
         Order.status == 'pending'
         ).order_by(Order.price.desc())
 
     return buy_orders
 
-def get_market_clearing_price(market, sell_orders, buy_orders):
+def get_market_clearing_price(market, sell_orders=None, buy_orders=None):
+    if not sell_orders:
+        sell_orders = get_sell_orders(market)
+    if not buy_orders:
+        buy_orders = get_buy_orders(market)
+
     unit_sell_orders = list()
     for order in sell_orders:
         for i in range(order.quantity):
@@ -49,105 +78,81 @@ def get_market_clearing_price(market, sell_orders, buy_orders):
 
     return price, quantity
 
-def do_sell_stock(market, user, price, quantity):
+def do_sell_stock(order, price, quantity):
     # resolve monetary transaction
-    bank.execute_transaction(user, price * quantity)
+    bank.execute_transaction(order.user, price * quantity)
 
     # attribute stocks
     try:
-        stock = Stock.get(Stock.id == market.id, Stock.id == user.id)
+        stock = Stock.get(Stock.market == order.market, Stock.user == order.user)
     except Stock.DoesNotExist:
         stock = Stock.create(
-            market = market.id,
-            user = user.id,
+            market = order.market,
+            user = order.user,
             quantity = 0
             )
 
     # selling short creates new stocks
     if stock.quantity < quantity:
-        market.volume += quantity - stock.quantity
+        order.market.volume += quantity - stock.quantity
 
     stock.quantity -= quantity
     stock.save()
 
-def do_buy_stock(market, user, price, quantity):
+def do_buy_stock(order, price, quantity):
     # resolve monetary transaction
-    bank.execute_transaction(user, -price * quantity)
+    bank.execute_transaction(order.user, -price * quantity)
 
     # attribute stocks
     try:
-        stock = Stock.get(Stock.id == market.id, Stock.id == user.id)
+        stock = Stock.get(Stock.market == order.market, Stock.user == order.user)
     except Stock.DoesNotExist:
         stock = Stock.create(
-            market = market.id,
-            user = user.id,
+            market = order.market,
+            user = order.user,
             quantity = 0
             )
 
     stock.quantity += quantity
     stock.save()
 
-def do_clear_sell_orders(market, sell_orders, price, quantity):
+def do_clear_order(order, price, clearing_quantity):
+    if clearing_quantity < order.quantity:
+        new_order = Order.create(
+            market=order.market, 
+            user=order.user, 
+            price=order.price, 
+            quantity=order.quantity - clearing_quantity,
+            type=order.type,
+            status='pending')
+        new_order.save()
+
+    order.price = price
+    order.quantity = clearing_quantity
+    order.status = 'cleared'
+    order.save()   
+
+def do_clear_sell_orders(sell_orders, price, quantity):
     sumq = 0
     for order in sell_orders:
-        if order.price <= price:
-            # full order is cleared
-            if order.quantity + sumq <= quantity:
-                do_sell_stock(market, order.user, price, order.quantity)
-                order.status = 'cleared'
-                order.save()
-                sumq += order.quantity
-            # parital order clearing
-            elif sumq < quantity:
-                partial_quantity = quantity - sumq
-                remaning_quantity = order.quantity - partial_quantity
+        if order.price <= price and sumq < quantity:
+            clearing_quantity = min(quantity - sumq, order.quantity)
+            do_sell_stock(order, price, clearing_quantity)
+            do_clear_order(order, price, clearing_quantity)
+            sumq += clearing_quantity
+        else:
+            break
 
-                do_sell_stock(market, order.user, price, partial_quantity)
-                order.quantity = partial_quantity
-                order.status = 'cleared'
-                order.save()
-                new_order = Order.create(
-                    market=market.id, 
-                    user=order.user, 
-                    price=order.price, 
-                    quantity=remaning_quantity,
-                    type='sell',
-                    status='pending')
-                new_order.save()
-                sumq = quantity
-            else:
-                break
-
-def do_clear_buy_orders(market, buy_orders, price, quantity):
+def do_clear_buy_orders(buy_orders, price, quantity):
     sumq = 0
     for order in buy_orders:
-        if order.price >= price:
-            # full order is cleared
-            if order.quantity + sumq <= quantity:
-                do_buy_stock(market, order.user, price, order.quantity)
-                order.status = 'cleared'
-                order.save()
-                sumq += order.quantity
-            # parital order clearing
-            elif sumq < quantity:
-                partial_quantity = quantity - sumq
-                remaning_quantity = order.quantity - partial_quantity
-
-                do_buy_stock(market, order.user, price, partial_quantity)
-                order.quantity = partial_quantity
-                order.status = 'cleared'
-                order.save()
-                new_order = Order.create(
-                    market=market.id, 
-                    user=order.user, 
-                    price=order.price, 
-                    quantity=remaning_quantity,
-                    type='buy',
-                    status='pending')
-                new_order.save()
-                sumq = quantity
-            else:
-                break
+        if order.price >= price and sumq < quantity:
+            clearing_quantity = min(quantity - sumq, order.quantity)
+            do_buy_stock(order, price, clearing_quantity)
+            do_clear_order(order, price, clearing_quantity)
+            sumq += clearing_quantity
+        else:
+            break
 
 def clear_market(market):
     sell_orders = get_sell_orders(market)
@@ -157,9 +162,34 @@ def clear_market(market):
     if not price:
         return
 
-    do_clear_buy_orders(market, buy_orders, price, quantity)
-    do_clear_sell_orders(market, sell_orders, price, quantity)
+    # always clear buy order first because of sell short stock creation
+    do_clear_buy_orders(buy_orders, price, quantity)
+    do_clear_sell_orders(sell_orders, price, quantity)
 
     # update market
     market.price = price
     market.save()
+
+    # save market history
+    market_history = MarketHistory.create(
+        market=market,
+        price=price,
+        volume=quantity,
+        date=datetime.datetime.now()
+        )
+
+def get_market_history(market):
+    history = MarketHistory.select().where(MarketHistory.market == market).order_by(MarketHistory.date.desc())
+
+    return history
+
+def close_market(market):
+    now = datetime.datetime.now()
+    if market.closing_date < now:
+        market.status = 'closed'
+        market.save()
+        return True
+
+    return False
+
+

@@ -6,7 +6,7 @@ from data_model import Account, Transaction
 
 def create_account(user):
     account = Account.create(
-        user=user.id,
+        user=user,
         balance=0
         )
     return account
@@ -18,7 +18,7 @@ def execute_transaction(user, price):
         account = create_account(user)
 
     transaction = Transaction.create(
-        account = account.id,
+        account = account,
         date = datetime.datetime.now(),
         amount = price
         )

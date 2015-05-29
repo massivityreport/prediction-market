@@ -3,11 +3,42 @@
 {% block title%}Home{% endblock %}
 
 {% block body %}
-    <h1>Pythia - prediction market</h1>
+    <h1>What will be the top query on Rakuten UK in the next hour ?</h1>
+
+    <h2>Markets close in {{ ttl }} min </h2>
 
     <ul>
         {% for market in markets %}
             <li><a href="{{ url_for('market', id=market.id) }}">{{ market.name }}</a>: {{ market.price }}</li>
         {% endfor %}
     </ul>
+
+    <h3>Submit a new query:</h3>
+
+    <form method=post action="{{ url_for('market_create') }}">
+        {% if create_form.errors %}
+            <ul class=errors>
+            {% for error in create_form.errors %}
+                <li>{{ error }}</li>
+            {% endfor %}
+            </ul>
+        {% endif %}
+        <div>
+            {{ create_form.name.label }}
+            {{ create_form.name }}
+        </div>
+        <div>
+            {{ create_form.price.label }}
+            {{ create_form.price }}
+        </div>
+        <div>
+            {{ create_form.quantity.label }}
+            {{ create_form.quantity }}
+        </div>        
+        <div>
+            {{ create_form.csrf_token}}
+            <input type='submit' name='action' value='BUY'>
+        </div>
+    </form>
+
 {% endblock %}

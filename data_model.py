@@ -75,3 +75,7 @@ class Transaction(BaseModel):
 def create_tables():
     for Model in (User, Role, UserRoles, Market, MarketHistory, Stock, Order, Account, Transaction):
         Model.create_table(fail_silently=True)
+
+def set_database(db):
+    for Model in (User, Role, UserRoles, Market, MarketHistory, Stock, Order, Account, Transaction):
+        Model._meta.database = db
